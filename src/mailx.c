@@ -37,6 +37,11 @@ struct mailx_address{
    * Email address.
    */
   char email[1000];
+  
+  /**
+   * Email name.
+   */
+  char name[256];
 };
 
 /**
@@ -100,6 +105,11 @@ struct mailx{
    */
   char *from;
 
+  /**
+   * From email name.
+   */
+  char *from_name;
+  
   /**
    * Determine if using a TLS encrypted connection or plain socket.
    */
@@ -199,7 +209,8 @@ smtp_ffile_get_contents(FILE *stream,
 static void
 mailx_address_append(struct mailx *const mailx,
                      enum smtp_address_type address_type,
-                     const char *const email){
+                     const char *const email,
+                     const char *email_name ){
   struct mailx_address *new_address;
   size_t new_address_list_sz;
 
@@ -214,6 +225,10 @@ mailx_address_append(struct mailx *const mailx,
   new_address->address_type = address_type;
   strncpy(new_address->email, email, sizeof(new_address->email));
   new_address->email[sizeof(new_address->email) - 1] = '\0';
+
+  if (email_name == NULL) return;
+  strncpy(new_address->name, email_name, sizeof(new_address->name));
+  new_address->name[sizeof(new_address->name) - 1] = '\0';
 }
 
 /**
@@ -242,7 +257,7 @@ mailx_send(struct mailx *const mailx){
 
   for(i = 0; i < mailx->num_address; i++){
     address = &mailx->address_list[i];
-    smtp_address_add(mailx->smtp, address->address_type, address->email, NULL);
+    smtp_address_add(mailx->smtp, address->address_type, address->email, (address->name)? address->name: NULL);
   }
 
   for(i = 0; i < mailx->num_attachment; i++){
@@ -412,6 +427,11 @@ mailx_parse_smtp_option(struct mailx *const mailx,
       err(1, "strdup");
     }
   }
+  else if(strcmp(opt_key, "smtp-from-name") == 0){
+    if((mailx->from_name = strdup(opt_value)) == NULL){
+      err(1, "strdup");
+    }
+  }
   else if(strcmp(opt_key, "smtp-from") == 0){
     if((mailx->from = strdup(opt_value)) == NULL){
       err(1, "strdup");
@@ -456,6 +476,7 @@ mailx_free(const struct mailx *const mailx){
   free(mailx->user);
   free(mailx->pass);
   free(mailx->from);
+  free(mailx->from_name);
 }
 
 /**
@@ -469,24 +490,26 @@ mailx_free(const struct mailx *const mailx){
  *                      controlling the behavior of the SMTP client connection.
  *
  * The following list contains possible options for the -S argument:
- *   - smtp-security - none, tls, starttls
- *   - smtp-auth     - none, plain, login, cram-md5
- *   - smtp-flag     - debug, no-cert-verify
- *   - smtp-server   - server name or IP address
- *   - smtp-port     - server port number
- *   - smtp-user     - server authentication user name
- *   - smtp-pass     - server authentication user password
- *   - smtp-from     - from email account
+ *   - smtp-security  - none, tls, starttls
+ *   - smtp-auth      - none, plain, login, cram-md5
+ *   - smtp-flag      - debug, no-cert-verify
+ *   - smtp-server    - server name or IP address
+ *   - smtp-port      - server port number
+ *   - smtp-user      - server authentication user name
+ *   - smtp-pass      - server authentication user password
+ *   - smtp-from      - from email account
+ *   - smtp-from-name - from email account name
  *
  * The following list shows the default option for -S argument if not provided:
- *   - smtp-security - none
- *   - smtp-auth     - none
- *   - smtp-flag     - none
- *   - smtp-server   - localhost
- *   - smtp-port     - 25
- *   - smtp-user     - none
- *   - smtp-pass     - none
- *   - smtp-from     - none
+ *   - smtp-security  - none
+ *   - smtp-auth      - none
+ *   - smtp-flag      - none
+ *   - smtp-server    - localhost
+ *   - smtp-port      - 25
+ *   - smtp-user      - none
+ *   - smtp-pass      - none
+ *   - smtp-from      - none
+ *   - smtp-from-name - none
  *
  * @param[in] argc Number of arguments in @p argv.
  * @param[in] argv String array containing the program name and any optional
@@ -545,10 +568,10 @@ int main(int argc, char *argv[]){
     err(1, "failed to read email body from stdin");
   }
 
-  mailx_address_append(&mailx, SMTP_ADDRESS_FROM, mailx.from);
+  mailx_address_append(&mailx, SMTP_ADDRESS_FROM, mailx.from, mailx.from_name);
 
   for(i = 0; i < argc; i++){
-    mailx_address_append(&mailx, SMTP_ADDRESS_TO, argv[i]);
+    mailx_address_append(&mailx, SMTP_ADDRESS_TO, argv[i], NULL);
   }
 
   mailx_send(&mailx);
